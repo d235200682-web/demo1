@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TechShop</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1d2433;--mut:#6b7385;--pri:#4f46e5;--bd:#e3e6ef;--ok:#16a34a;--bad:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#12141c;--card:#1b1f2b;--tx:#eceef5;--mut:#9aa1b5;--bd:#2c3243}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 20px}
+header b{font-size:20px;color:var(--pri);margin-right:auto}
+main{max-width:1050px;margin:20px auto;padding:0 16px}
+button,input,select{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+button{cursor:pointer}button.p{background:var(--pri);color:#fff;border-color:var(--pri)}button.d{color:var(--bad)}button.on{border-color:var(--pri);color:var(--pri)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.img{font-size:56px;text-align:center;padding:10px 0}.price{color:var(--pri);font-weight:700}.mut{color:var(--mut);font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}.bar input{flex:1;min-width:160px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden}
+td,th{padding:9px 10px;border-bottom:1px solid var(--bd);text-align:left}.wrap{overflow-x:auto}
+form.f{display:grid;gap:10px;max-width:420px;margin:auto}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1;min-width:110px}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;background:var(--bd)}.locked{color:var(--bad)}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;color:#fff;display:none;z-index:9}
+h2{margin:6px 0 14px}
+</style></head><body>
+<header><b>🛍️ TechShop</b><span id="nav" style="display:flex;gap:6px;flex-wrap:wrap"></span></header>
+<main id="main"></main><div id="toast"></div>
+<script>
+let me=null,cart=JSON.parse(localStorage.getItem('cart')||'[]'),view='shop',cat='',q='',prods=[];
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const vnd=n=>Number(n).toLocaleString('vi-VN')+'₫',isStaff=()=>me&&me.role!=='CUSTOMER';
+const ST={PENDING:'Chờ xác nhận',SHIPPING:'Đang giao',DELIVERED:'Đã giao',CANCELLED:'Đã hủy'},PAY={COD:'Thanh toán khi nhận hàng',BANK:'Chuyển khoản',MOMO:'Ví MoMo'},ROLE={ADMIN:'Admin',STAFF:'Nhân viên',CUSTOMER:'Khách hàng'};
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.background=bad?'var(--bad)':'var(--ok)';t.style.display='block';clearTimeout(t.h);t.h=setTimeout(()=>t.style.display='none',2800)}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||'Có lỗi xảy ra');return d}
+const run=f=>async(...a)=>{try{await f(...a)}catch(e){toast(e.message,1)}};
+const saveCart=()=>{localStorage.setItem('cart',JSON.stringify(cart));nav()};
+function go(v){view=v;nav();({shop,cartV,ordersV,adminV,login:()=>authV('login'),register:()=>authV('register')})[v]()}
+function nav(){const b=(v,t)=>`<button class="${view===v?'on':''}" onclick="go('${v}')">${t}</button>`;
+$('#nav').innerHTML=b('shop','Cửa hàng')+b('cartV','🛒 Giỏ ('+cart.reduce((s,i)=>s+i.qty,0)+')')+
+(me?b('ordersV','Đơn hàng')+(isStaff()?b('adminV','Quản trị'):'')+`<span class="mut" style="align-self:center">👤 ${esc(me.fullName)} (${ROLE[me.role]})</span><button onclick="logout()">Đăng xuất</button>`:b('login','Đăng nhập')+b('register','Đăng ký'))}
+const logout=run(async()=>{await api('POST','/api/logout');me=null;toast('Đã đăng xuất');go('shop')});
+
+// ---- Cửa hàng ----
+const shop=run(async()=>{const cats=await api('GET','/api/categories');prods=await api('GET','/api/products?category='+encodeURIComponent(cat)+'&q='+encodeURIComponent(q));
+$('#main').innerHTML=`<div class="bar"><input id="q" placeholder="🔍 Tìm sản phẩm..." value="${esc(q)}" onkeydown="if(event.key==='Enter'){q=this.value;shop()}">
+<button class="${cat?'':'on'}" onclick="cat='';shop()">Tất cả</button>${cats.map(c=>`<button class="${cat===c?'on':''}" onclick="cat=this.dataset.c;shop()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+<div class="grid">${prods.map(p=>`<div class="card"><div class="img">${esc(p.image)}</div><div>${esc(p.name)}</div><div class="mut">${esc(p.category)} • Còn ${p.stock}</div>
+<div class="price">${vnd(p.price)}</div><button class="p" style="width:100%;margin-top:8px" ${p.stock?'':'disabled'} onclick="addCart(${p.id})">${p.stock?'Thêm vào giỏ':'Hết hàng'}</button></div>`).join('')||'<p>Không có sản phẩm.</p>'}</div>`});
+function addCart(id){const p=prods.find(x=>x.id===id),i=cart.find(x=>x.id===id);if(i){if(i.qty>=p.stock)return toast('Đã đạt số lượng tối đa trong kho',1);i.qty++}else cart.push({id,name:p.name,price:p.price,qty:1,stock:p.stock,image:p.image});saveCart();toast('Đã thêm vào giỏ')}
+
+// ---- Giỏ hàng & đặt hàng ----
+function cartV(){const tot=cart.reduce((s,i)=>s+i.price*i.qty,0);
+$('#main').innerHTML=`<h2>Giỏ hàng</h2>`+(cart.length?`<div class="wrap"><table><tr><th>Sản phẩm</th><th>Đơn giá</th><th>Số lượng</th><th>Thành tiền</th><th></th></tr>
+${cart.map((i,n)=>`<tr><td>${esc(i.image)} ${esc(i.name)}</td><td>${vnd(i.price)}</td><td><input type="number" min="1" max="${i.stock}" value="${i.qty}" style="width:70px" onchange="setQty(${n},this.value)"></td><td>${vnd(i.price*i.qty)}</td><td><button class="d" onclick="cart.splice(${n},1);saveCart();cartV()">Xóa</button></td></tr>`).join('')}</table></div>
+<h3>Tổng: <span class="price">${vnd(tot)}</span></h3>
+<h3>Thông tin giao hàng</h3><form class="f" onsubmit="event.preventDefault();order()">
+<input id="n" placeholder="Họ tên" value="${esc(me?.fullName||'')}" required><input id="ph" placeholder="Số điện thoại (0xxxxxxxxx)" required>
+<input id="ad" placeholder="Địa chỉ giao hàng" required><select id="pm">${Object.entries(PAY).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+<button class="p">✅ Xác nhận đặt hàng</button></form>`:'<p>Giỏ hàng trống.</p>')}
+function setQty(n,v){v=parseInt(v);const i=cart[n];if(!(v>=1))v=1;if(v>i.stock){v=i.stock;toast('Chỉ còn '+i.stock+' sản phẩm',1)}i.qty=v;saveCart();cartV()}
+const order=run(async()=>{if(!me){toast('Vui lòng đăng nhập để đặt hàng',1);return go('login')}
+const o=await api('POST','/api/orders',{name:$('#n').value,phone:$('#ph').value,address:$('#ad').value,payment:$('#pm').value,items:cart.map(i=>({id:i.id,qty:i.qty}))});
+cart=[];saveCart();toast('Đặt hàng thành công! Mã đơn #'+o.id);go('ordersV')});
+
+// ---- Đơn hàng ----
+const ordersV=run(async()=>{const os=await api('GET','/api/orders');
+$('#main').innerHTML=`<h2>${isStaff()?'Quản lý đơn hàng':'Lịch sử mua hàng'}</h2>`+(os.map(o=>`<div class="card" style="margin-bottom:12px"><b>Đơn #${o.id}</b> <span class="tag">${ST[o.status]}</span>
+<span class="mut"> ${o.createdAt.replace('T',' ').slice(0,16)}</span><div class="mut">${esc(o.customerName)} • ${esc(o.phone)} • ${esc(o.address)} • ${PAY[o.payment]}</div>
+<ul>${o.items.map(i=>`<li>${esc(i.productName)} × ${i.qty} — ${vnd(i.price*i.qty)}</li>`).join('')}</ul><b class="price">Tổng: ${vnd(o.total)}</b>
+<div class="row">${isStaff()?`<select onchange="setSt(${o.id},this.value)">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${k===o.status?'selected':''}>${v}</option>`).join('')}</select>`:
+(o.status==='PENDING'?`<button class="d" onclick="setSt(${o.id},'CANCELLED')">Hủy đơn</button>`:'')}</div></div>`).join('')||'<p>Chưa có đơn hàng.</p>')});
+const setSt=run(async(id,st)=>{await api('PUT','/api/orders/'+id+'/status',{status:st});toast('Đã cập nhật');ordersV()});
+
+// ---- Quản trị ----
+const adminV=run(async()=>{prods=await api('GET','/api/products');const us=me.role==='ADMIN'?await api('GET','/api/users'):[];
+$('#main').innerHTML=`<h2>Quản lý sản phẩm</h2><form class="row" onsubmit="event.preventDefault();saveP()"><input type="hidden" id="pid">
+<input id="pn" placeholder="Tên" required><input id="pc" placeholder="Danh mục" required><input id="pi" placeholder="Emoji" maxlength="4"><input id="pp" type="number" placeholder="Giá" required><input id="ps" type="number" placeholder="Tồn kho" required><button class="p">Lưu</button></form>
+<div class="wrap"><table><tr><th></th><th>Tên</th><th>Danh mục</th><th>Giá</th><th>Kho</th><th></th></tr>${prods.map(p=>`<tr><td>${esc(p.image)}</td><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${vnd(p.price)}</td><td>${p.stock}</td>
+<td><button onclick="editP(${p.id})">Sửa</button> ${me.role==='ADMIN'?`<button class="d" onclick="delP(${p.id})">Xóa</button>`:''}</td></tr>`).join('')}</table></div>`+
+(me.role==='ADMIN'?`<h2 style="margin-top:28px">Quản lý tài khoản</h2><form class="row" onsubmit="event.preventDefault();addU()"><input id="un" placeholder="Tên đăng nhập" required><input id="uf" placeholder="Họ tên" required><input id="up" type="password" placeholder="Mật khẩu" required>
+<select id="ur">${Object.entries(ROLE).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select><button class="p">Thêm</button></form>
+<div class="wrap"><table><tr><th>Tài khoản</th><th>Họ tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr>${us.map(u=>`<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td>
+<td><select onchange="setRole(${u.id},this.value)">${Object.entries(ROLE).map(([k,v])=>`<option value="${k}" ${k===u.role?'selected':''}>${v}</option>`).join('')}</select></td>
+<td class="${u.locked?'locked':''}">${u.locked?'Đã khóa':'Hoạt động'}</td><td><button onclick="editU(${u.id})">Sửa tên</button> <button class="${u.locked?'':'d'}" onclick="lockU(${u.id})">${u.locked?'Mở khóa':'Khóa'}</button></td></tr>`).join('')}</table></div>`:'')});
+const saveP=run(async()=>{const id=$('#pid').value,b={name:$('#pn').value,category:$('#pc').value,image:$('#pi').value,price:$('#pp').value,stock:$('#ps').value};await api(id?'PUT':'POST','/api/products'+(id?'/'+id:''),b);toast('Đã lưu sản phẩm');adminV()});
+function editP(id){const p=prods.find(x=>x.id===id);$('#pid').value=id;$('#pn').value=p.name;$('#pc').value=p.category;$('#pi').value=p.image;$('#pp').value=p.price;$('#ps').value=p.stock;scrollTo(0,0)}
+const delP=run(async id=>{if(confirm('Xóa sản phẩm này?')){await api('DELETE','/api/products/'+id);adminV()}});
+const addU=run(async()=>{await api('POST','/api/users',{username:$('#un').value,fullName:$('#uf').value,password:$('#up').value,role:$('#ur').value});toast('Đã thêm tài khoản');adminV()});
+const setRole=run(async(id,role)=>{await api('PUT','/api/users/'+id,{role});toast('Đã đổi quyền');adminV()});
+const editU=run(async id=>{const f=prompt('Họ tên mới:');if(f){await api('PUT','/api/users/'+id,{fullName:f});adminV()}});
+const lockU=run(async id=>{await api('PUT','/api/users/'+id+'/lock');adminV()});
+
+// ---- Đăng nhập / đăng ký ----
+function authV(m){const reg=m==='register';$('#main').innerHTML=`<div class="card" style="max-width:420px;margin:auto"><h2>${reg?'Đăng ký':'Đăng nhập'}</h2><form class="f" onsubmit="event.preventDefault();auth('${m}')">
+${reg?'<input id="af" placeholder="Họ tên" required>':''}<input id="au" placeholder="Tên đăng nhập" required><input id="ap" type="password" placeholder="Mật khẩu" required><button class="p">${reg?'Tạo tài khoản':'Đăng nhập'}</button></form>
+<p class="mut">Demo: admin/admin123 • nhanvien/nv123456 • khach/khach123</p></div>`}
+const auth=run(async m=>{me=await api('POST','/api/'+m,{username:$('#au').value,password:$('#ap').value,fullName:$('#af')?.value});toast('Xin chào '+me.fullName);go('shop')});
+(async()=>{try{me=await api('GET','/api/me')}catch(e){}go('shop')})();
+</script></body></html>
